@@ -1,0 +1,293 @@
+---
+title: "An Analysis of the Effects of Health, Democracy, Education, and Economy on Internet Usage"
+author: "Tate Clagget, Jeff Shen, TUT0210, Group 5"
+subtitle: Final Project, STA130
+output:
+  ioslides_presentation: default
+  widescreen: yes
+---
+ 
+ 
+```{r, include=FALSE}
+# load packages
+library(tidyverse)
+library(maps)
+library(rpart)
+library(partykit)
+ 
+# get data
+path <- "https://raw.githubusercontent.com/ntaback/UofT_STA130/master/Fall2018/Finalproject/"
+democracy <- read_csv(paste0(path,"democracyindex2017.csv"))
+education <- read_csv(paste0(path,"education_cia2017.csv"))
+gdpppp <- read_csv(paste0(path,"gdpppp_cia2017.csv"))
+lifeexpect <- read_csv(paste0(path,"lifeexpect_cia2017.csv"))
+healthexpend <- read_csv(paste0(path,"healthexpend_cia2017.csv"))
+internetusers <- read_csv(paste0(path,"internetusers_cia2017.csv"))
+telephonelines <- read_csv(paste0(path,"telephonelines_cia2017.csv"))
+population <- read_csv(paste0(path,"population_cia2017.csv"))
+world_regions <- read_csv(paste0(path,"world_regions.csv"))
+ 
+# data wrangling
+percent <- inner_join(population, internetusers, by="Country") %>% mutate(percentInternet=`INTERNET USERS`/POPULATION)
+percent <- select(percent, Country, percentInternet, POPULATION)
+ 
+world_regions[world_regions$Country=='Russian Federation','Country'] <- 'Russia'
+ 
+percent <- inner_join(percent, world_regions, by='Country')[1:4]
+colnames(percent) <- c('Country', 'percent_internet', 'population', 'region')
+percent$region <- gsub('Asic & Pacific', 'Asia & Pacific', percent$region)
+ 
+df <- merge(democracy %>% select(Country, Score), education, by='Country', all=T) %>%
+  merge(gdpppp %>% select(Country, `GDP - PER CAPITA (PPP)`), by='Country', all=T) %>%
+  merge(lifeexpect %>% select(Country, `(YEARS)`), by='Country', all=T) %>%
+  merge(healthexpend %>% select(Country, `(% OF GDP)`), by='Country', all=T) %>%
+  merge(percent, by='Country', all=T) %>%
+  merge(telephonelines, by='Country', all=T)
+ 
+df <- select(df, Country, region, percent_internet, population, Score, `(YEARS)`, `(% OF GDP).x`, `(% OF GDP).y`, `GDP - PER CAPITA (PPP)`, `TELEPHONES - MAIN LINES IN USE`)
+colnames(df) <- c('country', 'region', 'percent_internet', 'population', 'democracy_score', 'life_expectancy', 'education_gdp_percentage', 'healthcare_gdp_percentage', 'gdp_per_capita', 'telephones')
+ 
+df$democracy_score <- as.numeric(as.character(df$democracy_score)) / 10
+df$education_gdp_percentage <- as.numeric(as.character(df$education_gdp_percentage)) / 100
+df$healthcare_gdp_percentage <- as.numeric(as.character(df$healthcare_gdp_percentage)) / 100
+ 
+df$gdp_per_capita <- gsub(',', '', df$gdp_per_capita)
+df$gdp_per_capita <- gsub('\\$', '', df$gdp_per_capita)
+df$gdp_per_capita <- as.numeric(as.character(df$gdp_per_capita))
+df[!df$country=='Country',]
+df$country <- gsub('United States', 'USA', df$country)
+ 
+has_internet <- df[!is.na(df$percent_internet),]
+no_internet <- df[is.na(df$percent_internet),]
+ 
+ 
+```
+ 
+## Introduction
+ 
+In this presentation, we attempt to analyze the relationship between internet usage by country and the following variables by observing their correlations and creating models and prediction trees for the more distinctly noticeable relationships.
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+head(na.omit(has_internet), n=4)
+```
+ 
+## Objectives
+ 
+We will also complete the following tasks:
+ 
+1. Define how internet usage is measured in a country for this presentation
+2. Determine whether different regions of the world have different internet usage
+3. Define how democracy, education, economy, and health are measured for this presentation, and determine the impact of democracy, education, economy, and health on internet use.
+ 
+## Data Cleaning
+ 
+* Created new data frames which match internet usage to coresponding observation - health expenditures, GDP per capita, and so on.
+ 
+* An overall data frame was used containing each given observation for each variable, by using **merge()** to merge each of the individual data frames together and then using **select()** to choose individual variables within the data frame.
+ 
+* We also used **mutate()** to create several other additional variables, such as internet usage as a proportion of the country's population.
+ 
+## Data Cleaning (continued)
+ 
+* We used **gsub** to rename countries and remove symbols so that each country's name was consistent across the data frame.
+ 
+* We also scaled down some variables, such democracy score, so that they could be analyzed as a value from 0-1.
+ 
+* We removed countries for which not enough information was given using **filter()** - however, if data for one of the variables was present, we used the country later to predict internet usage based on our models.
+ 
+## Statistical Methods - Introducing Variables
+ 
+* Democracy Index - A score given from 0-10 by the EIU, intended to measure a country's state of democracy
+* Education Expenditures - The proportion of a country's GDP spent on education
+* GDP Per Capita (PPP) - A country's GDP for one year based on purchasing power parity, divided by the population of the country
+* Life Expectancy - The predicted age of death for everyone born in a given year in a given country
+ 
+## Statistical Methods - Introducing Variables (continued)
+ 
+* Health Expenditures - The proportion of a country's GDP spent on healthcare
+* Telephone Lines - A country's total number of main telephone lines in use
+* Population - The total population of the country
+* Geographical Location - The geographical region a country is located - these include Africa, Arab States, Asia & Pacific, Europe, North America and South/Latin America
+ 
+## Statistical Methods - Decision Tree
+ 
+* We created a decision tree using **rpart()** for predicting **internet usage** by **GDP per capita**, using 80% of the data to train the tree and 20% of the data for testing the tree.
+ 
+## Statistical Methods - Linear Regression Models
+ 
+* We determined correlation for each relationship, but this alone doesn't tell us much.
+ 
+* We created linear regression models for predicting **internet usage** by **life expectancy**. **Life expectancy** was used since it had a strong correlation with **internet usage**, and thus our model would be more likely to more accurately predict **internet usage** for which no data was given.
+ 
+## Statistical Methods - Regression Models Continued
+ 
+* We used 80% of the data to train the model and 20% of the data to test the model.
+ 
+* Our regression model took the form $y_i = \beta_0 + \beta_1 x_1 + \epsilon_0$, where $y_i$ is the predicted **internet usage**, $\beta_0$ is the y-intercept (the hypothetical **internet usage** of a country with 0 **GDP Per Capita**), $\beta_1$ is the increase in **internet usage** per change in **life expectancy**, and $\epsilon_0$ is the random error.
+ 
+* Visualized confidence intervals of regressions to determine if each relationship was by chance.
+ 
+## Statistical Methods - Analyzing our predictions
+ 
+* We compared the predicted results of **internet usage** in our testing data for both our prediction tree and regression model to what the World Factbook actually reported them as.
+ 
+* This gave us some indication of how accurate our models are.
+ 
+## Results - Democracy Score
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#democracy score
+ggplot(has_internet) +
+  aes(x=democracy_score, y=percent_internet, color=region, xlab="Democracy Index", ylab="Percent Internet") +
+  geom_point() +
+  geom_smooth(method='lm', colour='black')
+ 
+summary(lm(percent_internet ~ democracy_score, data=has_internet))$r.squared
+```
+ 
+## Results - Life Expectancy
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# life_expectancy
+ggplot(has_internet) +  
+  aes(y=percent_internet, x=life_expectancy, xlab="Life Expectancy (years)", ylab="Percent Internet") +
+  geom_point(alpha=0.4) +
+  geom_smooth(method='lm') +
+  facet_wrap(~region)
+ 
+summary(lm(percent_internet ~ life_expectancy, data=has_internet))$r.squared
+```
+ 
+## Results - GDP Per Capita
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# gdp per capita
+ggplot(has_internet) +
+  aes(y=percent_internet, x=gdp_per_capita, xlab="GDP Per Capita (USD)", ylab="Percent Internet") +
+  geom_point(alpha=0.4) +
+  geom_smooth(method='lm', colour="black") +
+  facet_wrap(~region)
+ 
+summary(lm(percent_internet ~ gdp_per_capita, data=has_internet))$r.squared
+```
+ 
+## Results - Healthcare Expenditures
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# healthcare gdp percentage
+ggplot(has_internet) +
+  aes(y=percent_internet, x=healthcare_gdp_percentage, xlab="Healthcare Expenditures", ylab="Percent Internet") +
+  geom_point(alpha=0.4) +
+  geom_smooth(method='lm', colour='black') +
+  facet_wrap(~region)
+ 
+summary(lm(percent_internet ~ healthcare_gdp_percentage, data=has_internet))$r.squared
+```
+ 
+## Results - Education Expenditures
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# education gdp percentage
+ggplot(has_internet) +
+  aes(y=percent_internet, x=education_gdp_percentage, xlab="Education Expenditures", ylab="Percent Internet") +
+  geom_point(alpha=0.4) +
+  geom_smooth(method='lm', colour='black') +
+  facet_wrap(~region)
+ 
+summary(lm(percent_internet ~ education_gdp_percentage, data=has_internet))$r.squared
+```
+ 
+## Results - Internet Usage by Country
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+colnames(percent) <- gsub('Country', 'country', colnames(percent))
+percent$country <- gsub('United States', 'USA', percent$country)
+ 
+map_internet <- summarize(group_by(percent, region), median_internet=median(percent_internet), mean_internet=mean(percent_internet))
+map_internet <- merge(percent, map_internet, by='region')
+ 
+world <- map_data("world")
+ 
+ggplot() +
+  geom_map(data = world, map = world, aes(x = long, y = lat, map_id = region), fill = "#ffffff", color = "#ffffff") +
+  geom_map(data = map_internet, map = world, aes(fill = percent_internet, map_id = country), color = "#ffffff") +
+  scale_fill_continuous(low = '#ffffff', high = '#540091', guide = 'colorbar')
+```
+ 
+## Results - Classification Tree
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# split into training and testing data
+ 
+n <- nrow(has_internet)
+split_idx <- sample(n, size=round(0.2*n), replace=F)
+train <- has_internet[-split_idx,]
+test <- has_internet[split_idx,]
+ 
+# tree to predict percent_internet using gdp
+ 
+gdp_tree <- rpart(percent_internet ~ gdp_per_capita, data=train, parms = list(split = "information"))
+plot(as.party(gdp_tree),type = "simple", gp = gpar(cex = 0.5))
+gdp_pred <- predict(gdp_tree, newdata=test[!is.na(test$gdp_per_capita),])
+ 
+# training loss
+sqrt(mean((train[!is.na(test$gdp_per_capita),]$percent_internet - gdp_pred)^2))
+# testing loss
+sqrt(mean((test[!is.na(test$gdp_per_capita),]$percent_internet - gdp_pred)^2))
+ 
+# using a tree to predict countries with gdp data but no internet data
+ 
+no_internet_yes_gdp <- no_internet[!is.na(no_internet$gdp),]
+no_internet_yes_gdp$percent_internet <- predict(gdp_tree, newdata=no_internet_yes_gdp)
+```
+ 
+## Results - Regression model using life expectancy to predict Internet Usage
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# linear model to predict percent_internet using life_expectancy
+life_expectancy_linear <- lm(percent_internet ~ life_expectancy, data=train)
+life_expectancy_pred_linear <- predict(life_expectancy_linear, newdata=test[!is.na(test$life_expectancy),])
+ 
+# training loss
+sqrt(mean((train[!is.na(test$life_expectancy),]$percent_internet - life_expectancy_pred_linear)^2))
+# testing loss
+sqrt(mean((test[!is.na(test$life_expectancy),]$percent_internet - life_expectancy_pred_linear)^2))
+ 
+summary(life_expectancy_linear)$coefficients
+ 
+# using a linear model to predict countries with life expectancy data but no internet data
+ 
+no_internet_yes_life_expectancy <- no_internet[!is.na(no_internet$life_expectancy),]
+no_internet_yes_life_expectancy$percent_internet <- predict(life_expectancy_linear, newdata=no_internet_yes_life_expectancy)
+```
+ 
+## Results - Predicted Internet Usage by GDP per Capita
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+((test[abs(test[!is.na(test$gdp_per_capita),]$percent_internet - gdp_pred) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(gdp_pred), by=0))[2:4] %>% mutate(actual_internet=percent_internet, predicted_internet=gdp_pred, difference=abs(percent_internet-gdp_pred)) %>% select(country, actual_internet, predicted_internet, difference))[order(((test[abs(test[!is.na(test$gdp_per_capita),]$percent_internet - gdp_pred) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(gdp_pred), by=0))[2:4] %>% mutate(difference=abs(percent_internet-gdp_pred)))$difference),] %>% head(n=5)
+ 
+((test[abs(test[!is.na(test$gdp_per_capita),]$percent_internet - gdp_pred) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(gdp_pred), by=0))[2:4] %>% mutate(actual_internet=percent_internet, predicted_internet=gdp_pred, difference=abs(percent_internet-gdp_pred)) %>% select(country, actual_internet, predicted_internet, difference))[order(-((test[abs(test[!is.na(test$gdp_per_capita),]$percent_internet - gdp_pred) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(gdp_pred), by=0))[2:4] %>% mutate(difference=abs(percent_internet-gdp_pred)))$difference),] %>% head(n=5)
+```
+ 
+## Results - Predicted Internet Usage by Life Expectancy
+ 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+((test[abs(test[!is.na(test$life_expectancy),]$percent_internet - life_expectancy_pred_linear) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(life_expectancy_pred_linear), by=0))[2:4] %>% mutate(actual_internet=percent_internet, predicted_internet=life_expectancy_pred_linear, difference=abs(percent_internet-life_expectancy_pred_linear)) %>% select(country, actual_internet, predicted_internet, difference))[order(((test[abs(test[!is.na(test$life_expectancy),]$percent_internet - life_expectancy_pred_linear) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(life_expectancy_pred_linear), by=0))[2:4] %>% mutate(actual_internet=percent_internet, predicted_internet=life_expectancy_pred_linear, difference=abs(percent_internet-life_expectancy_pred_linear)) %>% select(country, actual_internet, predicted_internet, difference))$difference),] %>% head(n=5)
+ 
+((test[abs(test[!is.na(test$life_expectancy),]$percent_internet - life_expectancy_pred_linear) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(life_expectancy_pred_linear), by=0))[2:4] %>% mutate(actual_internet=percent_internet, predicted_internet=life_expectancy_pred_linear, difference=abs(percent_internet-life_expectancy_pred_linear)) %>% select(country, actual_internet, predicted_internet, difference))[order(-((test[abs(test[!is.na(test$life_expectancy),]$percent_internet - life_expectancy_pred_linear) > 0,] %>% select(country, percent_internet) %>% merge(data.frame(life_expectancy_pred_linear), by=0))[2:4] %>% mutate(actual_internet=percent_internet, predicted_internet=life_expectancy_pred_linear, difference=abs(percent_internet-life_expectancy_pred_linear)) %>% select(country, actual_internet, predicted_internet, difference))$difference),] %>% head(n=5)
+```
+ 
+## Conclusion
+ 
+* We were able to analyze the strength of the relationships between internet usage and health, education, democracy, and economy based on the given data.
+ 
+* We observed a moderately strong positive association between internet usage and economy and internet usage and health, as well as a weaker positive association between internet usage and democracy, but no significant relationship between education and internet usage.
+ 
+* The datasets that were given for us to use were not ideal. Because they were varied, there were data that were collected during different years. We do not take this into account during our analysis, but this may have affected our conclusions. Furthermore, there were many inconsistencies between datasets, such as different names for a single country. We dealt with many of these problems, but nevertheless, they were challenges that we faced.
+ 
+## Conclusion (continued)
+ 
+* We found it difficult to create suitable definitions of "democracy", "health", "education", and "economy" for this project, as we were challenged to come up with clear definitions which involved all of the data we used.
+ 
+* Despite this, the relationships between each variable and internet usage were generally either fairly strong or extremely weak, and for each case we found evidence to support either a real association or a lack of one.
+ 
+* Although we obtained generally favourable results, there are some improvements we could have made to our project. In particular, we would have liked to use the United Nations' Education Index, published annually, which measures a country's adult literacy rate and gross academic enrollment ratio.
